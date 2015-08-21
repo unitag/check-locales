@@ -22,15 +22,15 @@ var bundlesPath = path.join(root, 'locales');
 var bundlesExt = '.properties';
 
 var templates = {};
-glob.sync(path.join(templatesPath, '**/*' + templatesExt)).forEach(onTemplate);
+glob.sync(path.join(templatesPath, '**', '*' + templatesExt)).forEach(loadTemplate);
 
-var locales = glob.sync(path.join(bundlesPath, '*/*')).map(onLocale);
+var locales = glob.sync(path.join(bundlesPath, '*', '*')).map(loadLocale);
 
 Object.keys(templates).forEach(checkTemplate);
 
 // console.log(require('util').inspect(templates, {colors: true, depth: null}));
 
-function onTemplate(filename) {
+function loadTemplate(filename) {
 	var name = path.relative(templatesPath, filename).slice(0, -templatesExt.length);
 	var keys = getKeys(fs.readFileSync(filename, 'utf8'), templateKeyPattern);
 
@@ -41,12 +41,12 @@ function onTemplate(filename) {
 	};
 }
 
-function onLocale(dirname) {
+function loadLocale(dirname) {
 	var locale = path.relative(bundlesPath, dirname);
 
-	glob.sync(path.join(dirname, '**/*' + bundlesExt)).forEach(onBundle);
+	glob.sync(path.join(dirname, '**', '*' + bundlesExt)).forEach(loadBundle);
 
-	function onBundle(filename) {
+	function loadBundle(filename) {
 		var name = path.relative(dirname, filename).slice(0, -bundlesExt.length);
 
 		if (!templates.hasOwnProperty(name)) {
@@ -77,10 +77,17 @@ function checkTemplate(name) {
 	locales.forEach(checkLocale);
 
 	function checkLocale(locale) {
+		if (!template.locales.hasOwnProperty(locale)) {
+			if (template.keys.length > 0) {
+				console.error('Missing bundle: ' + path.join(locale, template.name + bundlesExt));
+			}
+			return;
+		}
+
 		var requiredKeys = buildHash(template.keys);
 		var unusedKeys = [];
 
-		(template.locales[locale] || []).forEach(checkKey);
+		template.locales[locale].forEach(checkKey);
 
 		var missingKeys = Object.keys(requiredKeys);
 
@@ -88,7 +95,7 @@ function checkTemplate(name) {
 		var unused = (unusedKeys.length > 0);
 
 		if (missing || unused) {
-			console.error('\nInvalid bundle: ' + path.join(locale, template.name + bundlesExt));
+			console.error('Invalid bundle: ' + path.join(locale, template.name + bundlesExt));
 			if (missing) {
 				console.error('\tMissing keys: ' + missingKeys.join(', '));
 			}
