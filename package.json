@@ -1,0 +1,12 @@
+{
+  "name": "check-locales",
+  "version": "0.1.0",
+  "description": "Check .properties files against their associated Dust templates",
+  "main": "index.js",
+  "author": "Cédric Connes <cedric.connes@gmail.com>",
+  "license": "MIT",
+  "private": true,
+  "dependencies": {
+    "glob": "^5.0.14"
+  }
+}
