@@ -3,10 +3,12 @@
   "version": "0.1.0",
   "description": "Check .properties files against their associated Dust templates",
   "main": "index.js",
+  "bin": "cli.js",
   "author": "Cédric Connes <cedric.connes@gmail.com>",
   "license": "MIT",
   "private": true,
   "dependencies": {
+    "async": "^1.4.2",
     "chalk": "^1.1.1",
     "glob": "^5.0.14"
   }

@@ -1,68 +1,208 @@
-#!/usr/bin/env node
 'use strict';
 
 var path = require('path');
 var fs = require('fs');
 
+var async = require('async');
 var glob = require('glob');
 var chalk = require('chalk');
 
-if (process.argv.length < 3) {
-	console.error('Usage: ' + process.argv[0] + ' ' + path.basename(__filename) + ' <project path>');
-	process.exit(2);
-}
-
-var root = path.resolve(process.argv[2]);
+module.exports = exports = checkLocales;
 
 var templateKeyPattern = /\{@pre\s+type="content"\s+key="([a-zA-Z0-9.\[\]]+)"(?:\s+mode="([^"]+)")?\s*\/\}/gm;
-var templatesPath = path.join(root, 'public/templates');
 var templatesExt = '.dust';
 
 var bundleKeyPattern = /^\s*([a-zA-Z0-9.\[\]]+)\s*=.*$/gm;
-var bundlesPath = path.join(root, 'locales');
 var bundlesExt = '.properties';
 
-var hasErrors = false;
+function checkLocales(root, callback) {
+	var templatesPath = path.join(root, 'public', 'templates');
+	var bundlesPath = path.join(root, 'locales');
 
-var templates = {};
-glob.sync(path.join(templatesPath, '**', '*' + templatesExt)).forEach(loadTemplate);
+	var templates = {};
+	var locales = [];
+	var badBundles = [];
 
-var locales = glob.sync(path.join(bundlesPath, '*', '*')).map(loadLocale);
+	glob(path.join(templatesPath, '**', '*' + templatesExt), loadTemplates);
 
-Object.keys(templates).forEach(checkTemplate);
-
-if (hasErrors) {
-	process.exit(1);
-}
-
-function loadTemplate(filename) {
-	var name = path.relative(templatesPath, filename).slice(0, -templatesExt.length);
-	var keys = getTemplateKeys(fs.readFileSync(filename, 'utf8'), templateKeyPattern);
-
-	templates[name] = {
-		name: name,
-		keys: keys,
-		locales: {}
-	};
-}
-
-function loadLocale(dirname) {
-	var locale = path.relative(bundlesPath, dirname);
-
-	glob.sync(path.join(dirname, '**', '*' + bundlesExt)).forEach(loadBundle);
-
-	function loadBundle(filename) {
-		var name = path.relative(dirname, filename).slice(0, -bundlesExt.length);
-
-		if (!templates.hasOwnProperty(name)) {
-			onError('unused', path.relative(bundlesPath, filename));
+	function loadTemplates(error, filenames) {
+		if (error) {
+			callback(error);
 			return;
 		}
 
-		templates[name].locales[locale] = getBundleKeys(fs.readFileSync(filename, 'utf8'));
+		async.each(filenames, loadTemplate, onTemplatesLoaded);
 	}
 
-	return locale;
+	function loadTemplate(filename, callback) {
+		fs.readFile(filename, 'utf8', parseTemplate);
+
+		function parseTemplate(error, file) {
+			if (error) {
+				callback(error);
+				return;
+			}
+
+			var name = path.relative(templatesPath, filename).slice(0, -templatesExt.length);
+
+			templates[name] = {
+				name: name,
+				keys: getTemplateKeys(file),
+				locales: {}
+			};
+
+			callback(null);
+		}
+	}
+
+	function onTemplatesLoaded(error) {
+		if (error) {
+			callback(error);
+			return;
+		}
+
+		glob(path.join(bundlesPath, '*', '*'), loadLocales);
+	}
+
+	function loadLocales(error, dirnames) {
+		if (error) {
+			callback(error);
+			return;
+		}
+
+		async.each(dirnames, loadLocale, onLocalesLoaded);
+	}
+
+	function loadLocale(dirname, callback) {
+		var locale = path.relative(bundlesPath, dirname);
+		locales.push(locale);
+
+		glob(path.join(dirname, '**', '*' + bundlesExt), loadBundles);
+
+		function loadBundles(error, filenames) {
+			if (error) {
+				callback(error);
+				return;
+			}
+
+			async.each(filenames, loadBundle, callback);
+		}
+
+		function loadBundle(filename, callback) {
+			fs.readFile(filename, 'utf8', parseBundle);
+
+			function parseBundle(error, file) {
+				if (error) {
+					callback(error);
+					return;
+				}
+
+				var name = path.relative(dirname, filename).slice(0, -bundlesExt.length);
+
+				if (!templates.hasOwnProperty(name)) {
+					onBadBundle('unused', path.relative(bundlesPath, filename));
+				} else {
+					templates[name].locales[locale] = getBundleKeys(file);
+				}
+
+				callback(null);
+			}
+		}
+	}
+
+	function onLocalesLoaded(error) {
+		if (error) {
+			callback(error);
+			return;
+		}
+
+		Object.keys(templates).forEach(checkTemplate);
+
+		callback(null, badBundles);
+	}
+
+	function checkTemplate(name) {
+		var template = templates[name];
+
+		locales.forEach(checkLocale);
+
+		function checkLocale(locale) {
+			if (!template.locales.hasOwnProperty(locale)) {
+				if (template.keys.length > 0) {
+					onBadBundle('missing', path.join(locale, template.name + bundlesExt));
+				}
+				return;
+			}
+
+			var requiredKeys = buildHash(template.keys.raw);
+			var pairedKeys = template.keys.paired;
+			var unusedKeys = [];
+
+			template.locales[locale].forEach(checkKey);
+
+			var missingKeys = Object.keys(requiredKeys);
+
+			if ((missingKeys.length > 0) || (unusedKeys.length > 0)) {
+				onBadBundle('invalid', path.join(locale, template.name + bundlesExt), {
+					unusedKeys: unusedKeys,
+					missingKeys: missingKeys
+				});
+			}
+
+			function checkKey(key) {
+				if (requiredKeys.hasOwnProperty(key)) {
+					delete requiredKeys[key];
+				} else if (!isPaired(key)) {
+					unusedKeys.push(key);
+				}
+			}
+
+			function isPaired(key) {
+				for (var index = 0, count = pairedKeys.length; index < count; index++) {
+					if (matchesPrefix(pairedKeys[index], key)) {
+						return true;
+					}
+				}
+
+				return false;
+			}
+		}
+	}
+
+	function onBadBundle(error, bundlePath, data) {
+		badBundles.push({
+			bundlePath: bundlePath,
+			error: error,
+			data: data
+		});
+
+		switch (error) {
+		case 'missing':
+			console.log(chalk.red('Missing bundle: ' + bundlePath));
+			break;
+
+		case 'unused':
+			console.log(chalk.yellow('Unused bundle: ' + bundlePath));
+			break;
+
+		case 'invalid':
+			var unused = (data.unusedKeys.length > 0);
+			var missing = (data.missingKeys.length > 0);
+			var color = (missing ? chalk.red : chalk.yellow);
+
+			console.log(color('Invalid bundle: ' + bundlePath));
+			if (missing) {
+				console.log('\tMissing keys: ' + data.missingKeys.join(', '));
+			}
+			if (unused) {
+				console.log('\tUnused keys: ' + data.unusedKeys.join(', '));
+			}
+			break;
+
+		default:
+			console.error(chalk.red('Invalid bundle (unknown error: ' + error + '): ' + bundlePath));
+		}
+	}
 }
 
 function getTemplateKeys(file) {
@@ -91,54 +231,6 @@ function getBundleKeys(file) {
 	return Object.keys(keys);
 }
 
-function checkTemplate(name) {
-	var template = templates[name];
-
-	locales.forEach(checkLocale);
-
-	function checkLocale(locale) {
-		if (!template.locales.hasOwnProperty(locale)) {
-			if (template.keys.length > 0) {
-				onError('missing', path.join(locale, template.name + bundlesExt));
-			}
-			return;
-		}
-
-		var requiredKeys = buildHash(template.keys.raw);
-		var pairedKeys = template.keys.paired;
-		var unusedKeys = [];
-
-		template.locales[locale].forEach(checkKey);
-
-		var missingKeys = Object.keys(requiredKeys);
-
-		if ((missingKeys.length > 0) || (unusedKeys.length > 0)) {
-			onError('invalid', path.join(locale, template.name + bundlesExt), {
-				unusedKeys: unusedKeys,
-				missingKeys: missingKeys
-			});
-		}
-
-		function checkKey(key) {
-			if (requiredKeys.hasOwnProperty(key)) {
-				delete requiredKeys[key];
-			} else if (!isPaired(key)) {
-				unusedKeys.push(key);
-			}
-		}
-
-		function isPaired(key) {
-			for (var index = 0, count = pairedKeys.length; index < count; index++) {
-				if (matchesPrefix(pairedKeys[index], key)) {
-					return true;
-				}
-			}
-
-			return false;
-		}
-	}
-}
-
 function buildHash(keys) {
 	return keys.reduce(addKey, {});
 }
@@ -157,35 +249,4 @@ function matchesPrefix(prefix, key) {
 
 	var nextChar = key.charAt(length);
 	return (nextChar === '.') || (nextChar === '[') || (nextChar === '');
-}
-
-function onError(error, bundle, data) {
-	hasErrors = true;
-
-	switch (error) {
-	case 'missing':
-		console.log(chalk.red('Missing bundle: ' + bundle));
-		break;
-
-	case 'unused':
-		console.log(chalk.yellow('Unused bundle: ' + bundle));
-		break;
-
-	case 'invalid':
-		var unused = (data.unusedKeys.length > 0);
-		var missing = (data.missingKeys.length > 0);
-		var color = (missing ? chalk.red : chalk.yellow);
-
-		console.log(color('Invalid bundle: ' + bundle));
-		if (missing) {
-			console.log('\tMissing keys: ' + data.missingKeys.join(', '));
-		}
-		if (unused) {
-			console.log('\tUnused keys: ' + data.unusedKeys.join(', '));
-		}
-		break;
-
-	default:
-		console.error(chalk.red('Invalid bundle (unknown error: ' + error + '): ' + bundle));
-	}
 }
