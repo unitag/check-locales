@@ -13,7 +13,7 @@ if (process.argv.length < 3) {
 
 var root = path.resolve(process.argv[2]);
 
-var templateKeyPattern = /\{@pre\s+type="content"\s+key="([a-zA-Z0-9.\[\]]+)"\s*\/\}/gm;
+var templateKeyPattern = /\{@pre\s+type="content"\s+key="([a-zA-Z0-9.\[\]]+)"(?:\s+mode="([^"]+)")?\s*\/\}/gm;
 var templatesPath = path.join(root, 'public/templates');
 var templatesExt = '.dust';
 
@@ -32,7 +32,7 @@ Object.keys(templates).forEach(checkTemplate);
 
 function loadTemplate(filename) {
 	var name = path.relative(templatesPath, filename).slice(0, -templatesExt.length);
-	var keys = getKeys(fs.readFileSync(filename, 'utf8'), templateKeyPattern);
+	var keys = getTemplateKeys(fs.readFileSync(filename, 'utf8'), templateKeyPattern);
 
 	templates[name] = {
 		name: name,
@@ -54,17 +54,32 @@ function loadLocale(dirname) {
 			return;
 		}
 
-		templates[name].locales[locale] = getKeys(fs.readFileSync(filename, 'utf8'), bundleKeyPattern);
+		templates[name].locales[locale] = getBundleKeys(fs.readFileSync(filename, 'utf8'));
 	}
 
 	return locale;
 }
 
-function getKeys(file, pattern) {
+function getTemplateKeys(file) {
+	var raw = {};
+	var paired = {};
+
+	var match;
+	while ((match = templateKeyPattern.exec(file))) {
+		((match[2] === 'paired') ? paired : raw)[match[1]] = true;
+	}
+
+	return {
+		raw: Object.keys(raw),
+		paired: Object.keys(paired)
+	};
+}
+
+function getBundleKeys(file) {
 	var keys = {};
 
 	var match;
-	while ((match = pattern.exec(file))) {
+	while ((match = bundleKeyPattern.exec(file))) {
 		keys[match[1]] = true;
 	}
 
@@ -84,7 +99,8 @@ function checkTemplate(name) {
 			return;
 		}
 
-		var requiredKeys = buildHash(template.keys);
+		var requiredKeys = buildHash(template.keys.raw);
+		var pairedKeys = template.keys.paired;
 		var unusedKeys = [];
 
 		template.locales[locale].forEach(checkKey);
@@ -107,9 +123,19 @@ function checkTemplate(name) {
 		function checkKey(key) {
 			if (requiredKeys.hasOwnProperty(key)) {
 				delete requiredKeys[key];
-			} else {
+			} else if (!isPaired(key)) {
 				unusedKeys.push(key);
 			}
+		}
+
+		function isPaired(key) {
+			for (var index = 0, count = pairedKeys.length; index < count; index++) {
+				if (matchesPrefix(pairedKeys[index], key)) {
+					return true;
+				}
+			}
+
+			return false;
 		}
 	}
 }
@@ -121,4 +147,15 @@ function buildHash(keys) {
 function addKey(hash, key) {
 	hash[key] = true;
 	return hash;
+}
+
+function matchesPrefix(prefix, key) {
+	var length = prefix.length;
+
+	if (key.substr(0, length) !== prefix) {
+		return false;
+	}
+
+	var nextChar = key.charAt(length);
+	return (nextChar === '.') || (nextChar === '[') || (nextChar === '');
 }
