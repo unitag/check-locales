@@ -15,15 +15,27 @@ var templatesExt = '.dust';
 var bundleKeyPattern = /^\s*([a-zA-Z0-9.\[\]]+)\s*=.*$/gm;
 var bundlesExt = '.properties';
 
-function checkLocales(root, callback) {
+function checkLocales(root, options, callback) {
+	if (typeof options === 'function') {
+		callback = options;
+		options = {};
+
+	} else if (!(options instanceof Object)) {
+		options = {};
+	}
+
 	var templatesPath = path.join(root, 'public', 'templates');
 	var bundlesPath = path.join(root, 'locales');
+
+	var globOptions = {
+		ignore: options.ignore || []
+	};
 
 	var templates = {};
 	var locales = [];
 	var badBundles = [];
 
-	glob(path.join(templatesPath, '**', '*' + templatesExt), loadTemplates);
+	glob(path.join(templatesPath, '**', '*' + templatesExt), globOptions, loadTemplates);
 
 	function loadTemplates(error, filenames) {
 		if (error) {
@@ -61,7 +73,7 @@ function checkLocales(root, callback) {
 			return;
 		}
 
-		glob(path.join(bundlesPath, '*', '*'), loadLocales);
+		glob(path.join(bundlesPath, '*', '*'), globOptions, loadLocales);
 	}
 
 	function loadLocales(error, dirnames) {
@@ -77,7 +89,7 @@ function checkLocales(root, callback) {
 		var locale = path.relative(bundlesPath, dirname);
 		locales.push(locale);
 
-		glob(path.join(dirname, '**', '*' + bundlesExt), loadBundles);
+		glob(path.join(dirname, '**', '*' + bundlesExt), globOptions, loadBundles);
 
 		function loadBundles(error, filenames) {
 			if (error) {
