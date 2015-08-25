@@ -5,6 +5,7 @@ var path = require('path');
 var fs = require('fs');
 
 var glob = require('glob');
+var chalk = require('chalk');
 
 if (process.argv.length < 3) {
 	console.error('Usage: ' + process.argv[0] + ' ' + path.basename(__filename) + ' <project path>');
@@ -50,7 +51,7 @@ function loadLocale(dirname) {
 		var name = path.relative(dirname, filename).slice(0, -bundlesExt.length);
 
 		if (!templates.hasOwnProperty(name)) {
-			console.error('Unused bundle: ' + path.relative(bundlesPath, filename));
+			console.log(chalk.yellow('Unused bundle: ' + path.relative(bundlesPath, filename)));
 			return;
 		}
 
@@ -94,7 +95,7 @@ function checkTemplate(name) {
 	function checkLocale(locale) {
 		if (!template.locales.hasOwnProperty(locale)) {
 			if (template.keys.length > 0) {
-				console.error('Missing bundle: ' + path.join(locale, template.name + bundlesExt));
+				console.log(chalk.red('Missing bundle: ' + path.join(locale, template.name + bundlesExt)));
 			}
 			return;
 		}
@@ -111,12 +112,13 @@ function checkTemplate(name) {
 		var unused = (unusedKeys.length > 0);
 
 		if (missing || unused) {
-			console.error('Invalid bundle: ' + path.join(locale, template.name + bundlesExt));
+			var color = missing ? chalk.red : chalk.yellow;
+			console.log(color('Invalid bundle: ' + path.join(locale, template.name + bundlesExt)));
 			if (missing) {
-				console.error('\tMissing keys: ' + missingKeys.join(', '));
+				console.log('\tMissing keys: ' + missingKeys.join(', '));
 			}
 			if (unused) {
-				console.error('\tUnused keys: ' + unusedKeys.join(', '));
+				console.log('\tUnused keys: ' + unusedKeys.join(', '));
 			}
 		}
 
