@@ -9,7 +9,7 @@ var chalk = require('chalk');
 
 if (process.argv.length < 3) {
 	console.error('Usage: ' + process.argv[0] + ' ' + path.basename(__filename) + ' <project path>');
-	process.exit(1);
+	process.exit(2);
 }
 
 var root = path.resolve(process.argv[2]);
@@ -22,6 +22,8 @@ var bundleKeyPattern = /^\s*([a-zA-Z0-9.\[\]]+)\s*=.*$/gm;
 var bundlesPath = path.join(root, 'locales');
 var bundlesExt = '.properties';
 
+var hasErrors = false;
+
 var templates = {};
 glob.sync(path.join(templatesPath, '**', '*' + templatesExt)).forEach(loadTemplate);
 
@@ -29,7 +31,9 @@ var locales = glob.sync(path.join(bundlesPath, '*', '*')).map(loadLocale);
 
 Object.keys(templates).forEach(checkTemplate);
 
-// console.log(require('util').inspect(templates, {colors: true, depth: null}));
+if (hasErrors) {
+	process.exit(1);
+}
 
 function loadTemplate(filename) {
 	var name = path.relative(templatesPath, filename).slice(0, -templatesExt.length);
@@ -51,7 +55,7 @@ function loadLocale(dirname) {
 		var name = path.relative(dirname, filename).slice(0, -bundlesExt.length);
 
 		if (!templates.hasOwnProperty(name)) {
-			console.log(chalk.yellow('Unused bundle: ' + path.relative(bundlesPath, filename)));
+			onError('unused', path.relative(bundlesPath, filename));
 			return;
 		}
 
@@ -95,7 +99,7 @@ function checkTemplate(name) {
 	function checkLocale(locale) {
 		if (!template.locales.hasOwnProperty(locale)) {
 			if (template.keys.length > 0) {
-				console.log(chalk.red('Missing bundle: ' + path.join(locale, template.name + bundlesExt)));
+				onError('missing', path.join(locale, template.name + bundlesExt));
 			}
 			return;
 		}
@@ -108,18 +112,11 @@ function checkTemplate(name) {
 
 		var missingKeys = Object.keys(requiredKeys);
 
-		var missing = (missingKeys.length > 0);
-		var unused = (unusedKeys.length > 0);
-
-		if (missing || unused) {
-			var color = missing ? chalk.red : chalk.yellow;
-			console.log(color('Invalid bundle: ' + path.join(locale, template.name + bundlesExt)));
-			if (missing) {
-				console.log('\tMissing keys: ' + missingKeys.join(', '));
-			}
-			if (unused) {
-				console.log('\tUnused keys: ' + unusedKeys.join(', '));
-			}
+		if ((missingKeys.length > 0) || (unusedKeys.length > 0)) {
+			onError('invalid', path.join(locale, template.name + bundlesExt), {
+				unusedKeys: unusedKeys,
+				missingKeys: missingKeys
+			});
 		}
 
 		function checkKey(key) {
@@ -160,4 +157,35 @@ function matchesPrefix(prefix, key) {
 
 	var nextChar = key.charAt(length);
 	return (nextChar === '.') || (nextChar === '[') || (nextChar === '');
+}
+
+function onError(error, bundle, data) {
+	hasErrors = true;
+
+	switch (error) {
+	case 'missing':
+		console.log(chalk.red('Missing bundle: ' + bundle));
+		break;
+
+	case 'unused':
+		console.log(chalk.yellow('Unused bundle: ' + bundle));
+		break;
+
+	case 'invalid':
+		var unused = (data.unusedKeys.length > 0);
+		var missing = (data.missingKeys.length > 0);
+		var color = (missing ? chalk.red : chalk.yellow);
+
+		console.log(color('Invalid bundle: ' + bundle));
+		if (missing) {
+			console.log('\tMissing keys: ' + data.missingKeys.join(', '));
+		}
+		if (unused) {
+			console.log('\tUnused keys: ' + data.unusedKeys.join(', '));
+		}
+		break;
+
+	default:
+		console.error(chalk.red('Invalid bundle (unknown error: ' + error + '): ' + bundle));
+	}
 }
