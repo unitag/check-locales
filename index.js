@@ -10,10 +10,10 @@ var chalk = require('chalk');
 module.exports = exports = checkLocales;
 
 var templateKeyPattern = /\{@pre\s+type="content"\s+key="([a-zA-Z0-9.\[\]]+)"(?:\s+mode="([^"]+)")?\s*\/\}/gm;
-var templatesExt = '.dust';
+var templateExt = '.dust';
 
 var bundleKeyPattern = /^\s*([a-zA-Z0-9.\[\]]+)\s*=.*$/gm;
-var bundlesExt = '.properties';
+var bundleExt = '.properties';
 
 function checkLocales(root, options, callback) {
 	if (typeof options === 'function') {
@@ -35,7 +35,7 @@ function checkLocales(root, options, callback) {
 	var locales = [];
 	var badBundles = [];
 
-	glob(path.join(templatesPath, '**', '*' + templatesExt), globOptions, loadTemplates);
+	glob(path.join(templatesPath, '**', '*' + templateExt), globOptions, loadTemplates);
 
 	function loadTemplates(error, filenames) {
 		if (error) {
@@ -55,7 +55,7 @@ function checkLocales(root, options, callback) {
 				return;
 			}
 
-			var name = path.relative(templatesPath, filename).slice(0, -templatesExt.length);
+			var name = path.relative(templatesPath, filename).slice(0, -templateExt.length);
 
 			templates[name] = {
 				name: name,
@@ -89,7 +89,7 @@ function checkLocales(root, options, callback) {
 		var locale = path.relative(bundlesPath, dirname);
 		locales.push(locale);
 
-		glob(path.join(dirname, '**', '*' + bundlesExt), globOptions, loadBundles);
+		glob(path.join(dirname, '**', '*' + bundleExt), globOptions, loadBundles);
 
 		function loadBundles(error, filenames) {
 			if (error) {
@@ -109,7 +109,7 @@ function checkLocales(root, options, callback) {
 					return;
 				}
 
-				var name = path.relative(dirname, filename).slice(0, -bundlesExt.length);
+				var name = path.relative(dirname, filename).slice(0, -bundleExt.length);
 
 				if (!templates.hasOwnProperty(name)) {
 					onBadBundle('unused', path.relative(bundlesPath, filename));
@@ -141,7 +141,7 @@ function checkLocales(root, options, callback) {
 		function checkLocale(locale) {
 			if (!template.locales.hasOwnProperty(locale)) {
 				if (template.keys.length > 0) {
-					onBadBundle('missing', path.join(locale, template.name + bundlesExt));
+					onBadBundle('missing', path.join(locale, template.name + bundleExt));
 				}
 				return;
 			}
@@ -155,7 +155,7 @@ function checkLocales(root, options, callback) {
 			var missingKeys = Object.keys(requiredKeys);
 
 			if ((missingKeys.length > 0) || (unusedKeys.length > 0)) {
-				onBadBundle('invalid', path.join(locale, template.name + bundlesExt), {
+				onBadBundle('invalid', path.join(locale, template.name + bundleExt), {
 					unusedKeys: unusedKeys,
 					missingKeys: missingKeys
 				});
@@ -212,7 +212,7 @@ function checkLocales(root, options, callback) {
 			break;
 
 		default:
-			console.error(chalk.red('Invalid bundle (unknown error: ' + error + '): ' + bundlePath));
+			console.log(chalk.red('Invalid bundle (unknown error: ' + error + '): ' + bundlePath));
 		}
 	}
 }
