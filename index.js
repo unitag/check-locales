@@ -1,10 +1,10 @@
 'use strict';
 
 var path = require('path');
-var fs = require('fs');
 
 var async = require('async');
 var glob = require('glob');
+var fse = require('fs-extra');
 var chalk = require('chalk');
 
 module.exports = exports = checkLocales;
@@ -24,18 +24,21 @@ function checkLocales(root, options, callback) {
 		options = {};
 	}
 
-	var templatesPath = path.join(root, 'public', 'templates');
-	var bundlesPath = path.join(root, 'locales');
+	var templatesRoot = path.join(root, 'public', 'templates');
+	var bundlesRoot = path.join(root, 'locales');
 
 	var globOptions = {
 		ignore: options.ignore || []
 	};
 
+	var missingBundleHandling = options.missingBundle || 'allow';
+
 	var templates = {};
 	var locales = [];
 	var badBundles = [];
+	var createdBundles = [];
 
-	glob(path.join(templatesPath, '**', '*' + templateExt), globOptions, loadTemplates);
+	glob(path.join(templatesRoot, '**', '*' + templateExt), globOptions, loadTemplates);
 
 	function loadTemplates(error, filenames) {
 		if (error) {
@@ -47,7 +50,7 @@ function checkLocales(root, options, callback) {
 	}
 
 	function loadTemplate(filename, callback) {
-		fs.readFile(filename, 'utf8', parseTemplate);
+		fse.readFile(filename, 'utf8', parseTemplate);
 
 		function parseTemplate(error, file) {
 			if (error) {
@@ -55,7 +58,7 @@ function checkLocales(root, options, callback) {
 				return;
 			}
 
-			var name = path.relative(templatesPath, filename).slice(0, -templateExt.length);
+			var name = path.relative(templatesRoot, filename).slice(0, -templateExt.length);
 
 			templates[name] = {
 				name: name,
@@ -73,7 +76,7 @@ function checkLocales(root, options, callback) {
 			return;
 		}
 
-		glob(path.join(bundlesPath, '*', '*'), globOptions, loadLocales);
+		glob(path.join(bundlesRoot, '*', '*'), globOptions, loadLocales);
 	}
 
 	function loadLocales(error, dirnames) {
@@ -86,8 +89,10 @@ function checkLocales(root, options, callback) {
 	}
 
 	function loadLocale(dirname, callback) {
-		var locale = path.relative(bundlesPath, dirname);
+		var locale = path.relative(bundlesRoot, dirname);
 		locales.push(locale);
+
+		var requiredBundles = buildHash(Object.keys(templates));
 
 		glob(path.join(dirname, '**', '*' + bundleExt), globOptions, loadBundles);
 
@@ -97,11 +102,11 @@ function checkLocales(root, options, callback) {
 				return;
 			}
 
-			async.each(filenames, loadBundle, callback);
+			async.each(filenames, loadBundle, onBundlesLoaded);
 		}
 
 		function loadBundle(filename, callback) {
-			fs.readFile(filename, 'utf8', parseBundle);
+			fse.readFile(filename, 'utf8', parseBundle);
 
 			function parseBundle(error, file) {
 				if (error) {
@@ -112,13 +117,36 @@ function checkLocales(root, options, callback) {
 				var name = path.relative(dirname, filename).slice(0, -bundleExt.length);
 
 				if (!templates.hasOwnProperty(name)) {
-					onBadBundle('unused', path.relative(bundlesPath, filename));
+					onBadBundle('unused', path.relative(bundlesRoot, filename));
 				} else {
 					templates[name].locales[locale] = getBundleKeys(file);
+					delete requiredBundles[name];
 				}
 
 				callback(null);
 			}
+		}
+
+		function onBundlesLoaded(error) {
+			if (error) {
+				callback(error);
+				return;
+			}
+
+			var missingBundles = Object.keys(requiredBundles);
+
+			if ((missingBundles.length === 0) || (missingBundleHandling !== 'create')) {
+				callback(null);
+				return;
+			}
+
+			var missingPaths = missingBundles.map(function onMissingBundle(name) {
+				var bundlePath = path.join(locale, name + bundleExt);
+				createdBundles.push(bundlePath);
+				return path.join(bundlesRoot, bundlePath);
+			});
+
+			async.each(missingPaths, fse.ensureFile, callback);
 		}
 	}
 
@@ -130,7 +158,7 @@ function checkLocales(root, options, callback) {
 
 		Object.keys(templates).forEach(checkTemplate);
 
-		callback(null, badBundles);
+		callback(null, badBundles, createdBundles);
 	}
 
 	function checkTemplate(name) {
@@ -140,7 +168,7 @@ function checkLocales(root, options, callback) {
 
 		function checkLocale(locale) {
 			if (!template.locales.hasOwnProperty(locale)) {
-				if (template.keys.length > 0) {
+				if ((missingBundleHandling === 'forbid') || (template.keys.length > 0)) {
 					onBadBundle('missing', path.join(locale, template.name + bundleExt));
 				}
 				return;
