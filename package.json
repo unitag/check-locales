@@ -1,6 +1,6 @@
 {
   "name": "check-locales",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Check .properties files against their associated Dust templates",
   "keywords": [
     "check",
