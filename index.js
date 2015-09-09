@@ -170,8 +170,10 @@ function checkLocales(root, options, callback) {
 			if (!template.locales.hasOwnProperty(locale)) {
 				if ((missingBundleHandling === 'forbid') || (template.keys.length > 0)) {
 					onBadBundle('missing', path.join(locale, template.name + bundleExt));
+					return;
 				}
-				return;
+
+				template.locales[locale] = [];
 			}
 
 			var requiredKeys = buildHash(template.keys.raw);
