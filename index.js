@@ -177,7 +177,7 @@ function checkLocales(root, options, callback) {
 			}
 
 			var requiredKeys = buildHash(template.keys.raw);
-			var pairedKeys = template.keys.paired;
+			var treeKeys = template.keys.tree;
 			var unusedKeys = [];
 
 			template.locales[locale].forEach(checkKey);
@@ -194,14 +194,14 @@ function checkLocales(root, options, callback) {
 			function checkKey(key) {
 				if (requiredKeys.hasOwnProperty(key)) {
 					delete requiredKeys[key];
-				} else if (!isPaired(key)) {
+				} else if (!inTree(key)) {
 					unusedKeys.push(key);
 				}
 			}
 
-			function isPaired(key) {
-				for (var index = 0, count = pairedKeys.length; index < count; index++) {
-					if (matchesPrefix(pairedKeys[index], key)) {
+			function inTree(key) {
+				for (var index = 0, count = treeKeys.length; index < count; index++) {
+					if (matchesPrefix(treeKeys[index], key)) {
 						return true;
 					}
 				}
@@ -249,16 +249,18 @@ function checkLocales(root, options, callback) {
 
 function getTemplateKeys(file) {
 	var raw = {};
-	var paired = {};
+	var tree = {};
 
 	var match;
 	while ((match = templateKeyPattern.exec(file))) {
-		((match[2] === 'paired') ? paired : raw)[match[1]] = true;
+		var mode = match[2];
+		var isTree = (mode === 'paired') || (mode === 'json');
+		(isTree ? tree : raw)[match[1]] = true;
 	}
 
 	return {
 		raw: Object.keys(raw),
-		paired: Object.keys(paired)
+		tree: Object.keys(tree)
 	};
 }
 
